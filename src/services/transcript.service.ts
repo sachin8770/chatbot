@@ -123,7 +123,7 @@ Follow instructions in this order:
 4. Retrieved transcript content
 
 <transcript_context>
-\${context}
+${context || "No relevant transcript context found."}
 </transcript_context>`)
     });
 

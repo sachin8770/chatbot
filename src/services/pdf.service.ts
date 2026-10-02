@@ -124,7 +124,7 @@ Follow instructions in this order:
 4. Retrieved PDF content
 
 <pdf_context>
-\${formatDocs(docs)}
+${formatDocs(docs) || "No relevant PDF context found."}
 </pdf_context>`)
     });
 

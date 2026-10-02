@@ -93,13 +93,15 @@ async function askQuestion(
   let body: any = { question, threadId };
 
   if (meta.type === "image") {
-    body.sessionImageUrls = indexPayload?.data?.indexed?.map((i: any) => i.imageUrl) ?? [];
+    const list = indexPayload?.data?.indexed || indexPayload?.indexed || [];
+    body.sessionImageUrls = list.map((i: any) => i.imageUrl);
   } else if (meta.type === "pdf") {
-    body.source = indexPayload?.data?.fileName;
+    body.source = indexPayload?.data?.fileName || indexPayload?.fileName;
   } else if (meta.type === "transcript") {
-    body.sourceNames = [indexPayload?.data?.name];
+    const name = indexPayload?.data?.name || indexPayload?.name;
+    body.sourceNames = name ? [name] : [];
   } else if (meta.type === "video") {
-    body.videoId = indexPayload?.data?.videoId;
+    body.videoId = indexPayload?.data?.videoId || indexPayload?.videoId;
   }
 
   const res = await fetch(meta.apiAskRoute, {

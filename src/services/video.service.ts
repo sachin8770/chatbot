@@ -94,26 +94,40 @@ export async function askQuestion(question: string, videoId: string, threadId?: 
 
     let results: any[] = [];
     if (videoId) {
-      results = await vectorStore.similaritySearchWithScore(question, 15, {
-        must: [{ key: "metadata.videoId", match: { any: [videoId] } }]
-      });
+      try {
+        results = await vectorStore.similaritySearchWithScore(question, 15, {
+          must: [{ key: "metadata.videoId", match: { any: [videoId] } }]
+        });
+      } catch (err: any) {
+        console.warn(`[askQuestion] Qdrant filtered search failed, trying fallback:`, err?.message || err);
+        const fallbackResults = await vectorStore.similaritySearchWithScore(question, 15);
+        results = fallbackResults.filter(([doc]) => doc.metadata?.videoId === videoId);
+      }
       console.log(`[askQuestion] Qdrant search for videoId '${videoId}' returned ${results.length} results.`);
     }
 
-    // Deduplicate chunks sharing the same start timestamp (DB re-index artifacts)
-    const seenStarts = new Set<number>();
+    // Deduplicate chunks safely
+    const seen = new Set<string>();
     const uniqueResults = results.filter(([doc]) => {
-      if (seenStarts.has(doc.metadata.start)) return false;
-      seenStarts.add(doc.metadata.start);
+      const key = doc.metadata?.start !== undefined
+        ? `start-${doc.metadata.start}`
+        : `content-${(doc.pageContent || "").slice(0, 100)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
       return true;
     });
 
     const context = uniqueResults
       .map(([doc]) => {
-        const startSec = Math.floor(doc.metadata.start / 1000);
-        const mins = Math.floor(startSec / 60);
-        const secs = (startSec % 60).toString().padStart(2, "0");
-        return `[Start: ${mins}:${secs}]\n${doc.pageContent}`;
+        const rawStart = doc.metadata?.start;
+        let timeLabel = "";
+        if (typeof rawStart === "number") {
+          const startSec = rawStart > 1000 ? Math.floor(rawStart / 1000) : Math.floor(rawStart);
+          const mins = Math.floor(startSec / 60);
+          const secs = (startSec % 60).toString().padStart(2, "0");
+          timeLabel = `[Start: ${mins}:${secs}]\n`;
+        }
+        return `${timeLabel}${doc.pageContent}`;
       })
       .join("\n\n");
 
@@ -166,25 +180,38 @@ Follow instructions in this order:
 4. Retrieved video content
 
 <video_context>
-\${context ||"No relevant video context foun"}
+${context || "No relevant video context found."}
 </video_context>`)
     });
 
     const response = await agent.invoke({
       messages: [...pastMessages, new HumanMessage(question)],
     });
-    const answer = response.messages[response.messages.length - 1].content as string;
+
+    const lastMsg = response.messages[response.messages.length - 1];
+    let answer = "";
+    if (typeof lastMsg.content === "string") {
+      answer = lastMsg.content;
+    } else if (Array.isArray(lastMsg.content)) {
+      answer = lastMsg.content.map((c: any) => (typeof c === "string" ? c : c.text || "")).join("");
+    } else {
+      answer = String(lastMsg.content || "");
+    }
 
     if (history) {
       await history.addMessage(new HumanMessage(question));
       await history.addMessage(new AIMessage(answer));
     }
 
-    const sources = uniqueResults.map(([doc, score]) => ({
-      start: Math.floor(doc.metadata.start / 1000),
-      score: parseFloat(score.toFixed(4)),
-      content: doc.pageContent.slice(0, 150) + "...",
-    }));
+    const sources = uniqueResults.map(([doc, score]) => {
+      const rawStart = doc.metadata?.start;
+      const startSec = typeof rawStart === "number" ? (rawStart > 1000 ? Math.floor(rawStart / 1000) : Math.floor(rawStart)) : 0;
+      return {
+        start: startSec,
+        score: typeof score === "number" ? parseFloat(score.toFixed(4)) : 0,
+        content: (doc.pageContent || "").slice(0, 150) + "...",
+      };
+    });
 
     return { answer, sources };
   } catch (error: any) {

@@ -2,6 +2,7 @@
 
 import React, { useRef, useState } from "react";
 import { AttachedFile } from "./ChatMessage";
+import { extractYoutubeId } from "@/src/utils/youtube";
 
 const FILE_TYPES = [
   {
@@ -79,12 +80,7 @@ export default function FileUploadButton({ onFilesSelected }: Props) {
       const file = new File([inputValue], "pasted-transcript.txt", { type: "text/plain" });
       onFilesSelected([{ type: "transcript", name: "Pasted Transcript" }], [file], activeInput);
     } else if (activeInput.type === "video") {
-      let videoId = inputValue;
-      if (videoId.includes("v=")) {
-        videoId = new URLSearchParams(videoId.split("?")[1]).get("v") || videoId;
-      } else if (videoId.includes("youtu.be/")) {
-        videoId = videoId.split("youtu.be/")[1]?.split("?")[0] || videoId;
-      }
+      const videoId = extractYoutubeId(inputValue) || inputValue.trim();
       const file = new File([videoId], "youtube-video.txt", { type: "text/plain" });
       onFilesSelected([{ type: "video", name: `YouTube: ${videoId}` }], [file], activeInput);
     }
